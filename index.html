@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metrónomo PWA</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    background: #000;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+
+  .app {
+    text-align: center;
+    width: 90%;
+    max-width: 400px;
+  }
+
+  h1 {
+    margin-bottom: 30px;
+  }
+
+  .bpm {
+    font-size: 48px;
+    margin: 20px 0;
+  }
+
+  input[type="range"] {
+    width: 100%;
+  }
+
+  button {
+    margin-top: 30px;
+    padding: 15px;
+    width: 100%;
+    font-size: 18px;
+    border: none;
+    border-radius: 10px;
+    background: #1db954;
+    color: #000;
+  }
+
+  button.stop {
+    background: #ff5252;
+    color: #000;
+  }
+</style>
+</head>
+
+<body>
+<div class="app">
+  <h1>🎵 Metrónomo</h1>
+
+  <div class="bpm" id="bpmValue">120 BPM</div>
+
+  <input type="range" min="40" max="240" value="120" id="bpmSlider">
+
+  <button id="toggleBtn">▶ Iniciar</button>
+</div>
+
+<script>
+/* =======================
+   REGISTRO SERVICE WORKER
+   ======================= */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js');
+}
+
+/* =======================
+   WAKE LOCK (pantalla)
+   ======================= */
+let wakeLock = null;
+async function lockScreen() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) {}
+  }
+}
+function releaseScreen() {
+  if (wakeLock) {
+    wakeLock.release();
+    wakeLock = null;
+  }
+}
+
+/* =======================
+   METRÓNOMO
+   ======================= */
+let audioCtx;
+let isPlaying = false;
+let tempo = 120;
+let nextNoteTime = 0;
+let timerID;
+
+const lookahead = 25;           // ms
+const scheduleAheadTime = 0.1;  // s
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playClick(time) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  osc.frequency.value = 1000;
+  gain.gain.value = 0.1;
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start(time);
+  osc.stop(time + 0.05);
+}
+
+function scheduler() {
+  while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
+    playClick(nextNoteTime);
+    nextNoteTime += 60 / tempo;
+  }
+}
+
+function start() {
+  if (!audioCtx) initAudio();
+
+  audioCtx.resume();
+  nextNoteTime = audioCtx.currentTime + 0.05;
+  timerID = setInterval(scheduler, lookahead);
+  isPlaying = true;
+  lockScreen();
+}
+
+function stop() {
+  clearInterval(timerID);
+  isPlaying = false;
+  releaseScreen();
+}
+
+/* =======================
+   UI
+   ======================= */
+const slider = document.getElementById('bpmSlider');
+const bpmValue = document.getElementById('bpmValue');
+const btn = document.getElementById('toggleBtn');
+
+slider.addEventListener('input', () => {
+  tempo = slider.value;
+  bpmValue.textContent = tempo + ' BPM';
+});
+
+btn.addEventListener('click', () => {
+  if (!isPlaying) {
+    start();
+    btn.textContent = '■ Detener';
+    btn.classList.add('stop');
+  } else {
+    stop();
+    btn.textContent = '▶ Iniciar';
+    btn.classList.remove('stop');
+  }
+});
+</script>
+</body>
+</html>
